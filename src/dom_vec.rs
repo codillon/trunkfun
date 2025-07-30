@@ -1,14 +1,16 @@
 // A Codillon DOM "vector": a variable-length collection of Components of the same type
 
-use crate::web_support::{Component, ElementComponent, ElementHandle, ElementRef, NodeRef};
+use crate::web_support::{
+    AnyElement, Component, ElementComponent, ElementHandle, ElementRef, NodeRef,
+};
 use delegate::delegate;
 
-pub struct DomVec<Child: Component, Element: AsRef<web_sys::HtmlElement>> {
+pub struct DomVec<Child: Component, Element: AnyElement> {
     contents: Vec<Child>,
     elem: ElementHandle<Element>,
 }
 
-impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> DomVec<Child, Element> {
+impl<Child: Component, Element: AnyElement> DomVec<Child, Element> {
     pub fn new(elem: ElementHandle<Element>) -> Self {
         Self {
             contents: Vec::new(),
@@ -19,6 +21,10 @@ impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> DomVec<Child, Eleme
     pub fn push(&mut self, elem: Child) {
         self.contents.push(elem);
         self.elem.append_node(self.contents.last().unwrap().node());
+    }
+
+    pub fn remove(&mut self, index: usize) -> Child {
+        self.contents.remove(index)
     }
 
     pub fn set_contents(&mut self, elem: Child) {
@@ -37,7 +43,7 @@ impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> DomVec<Child, Eleme
     }
 }
 
-impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> Component for DomVec<Child, Element> {
+impl<Child: Component, Element: AnyElement> Component for DomVec<Child, Element> {
     fn audit(&self) {
         self.elem.audit_attributes();
         let dom_children = self.elem.get_child_node_list();
@@ -53,9 +59,7 @@ impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> Component for DomVe
     }
 }
 
-impl<Child: Component, Element: AsRef<web_sys::HtmlElement>> ElementComponent<Element>
-    for DomVec<Child, Element>
-{
+impl<Child: Component, Element: AnyElement> ElementComponent<Element> for DomVec<Child, Element> {
     fn element(&self) -> ElementRef<Element> {
         self.elem.element()
     }

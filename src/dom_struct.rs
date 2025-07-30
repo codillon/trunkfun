@@ -2,11 +2,11 @@
 // of heterogeneous Components of (possibly) different types.
 
 use crate::web_support::{
-    ArrayHandle, Component, ElementComponent, ElementHandle, ElementRef, NodeListHandle, NodeRef,
+    AnyElement, ArrayHandle, Component, ElementComponent, ElementHandle, ElementRef,
+    NodeListHandle, NodeRef,
 };
-use web_sys::HtmlElement;
 
-pub struct DomStruct<Child: Sequence, Element: AsRef<HtmlElement>> {
+pub struct DomStruct<Child: Sequence, Element: AnyElement> {
     contents: Child,
     elem: ElementHandle<Element>,
 }
@@ -42,7 +42,7 @@ impl<First: Component, Rest: Sequence> Sequence for (First, Rest) {
     }
 }
 
-impl<Child: Sequence, Element: AsRef<HtmlElement>> DomStruct<Child, Element> {
+impl<Child: Sequence, Element: AnyElement> DomStruct<Child, Element> {
     pub fn new(contents: Child, elem: ElementHandle<Element>) -> Self {
         let mut child_nodes = ArrayHandle::new_with_length(Child::LEN);
         contents.install(&mut child_nodes, 0);
@@ -58,12 +58,16 @@ impl<Child: Sequence, Element: AsRef<HtmlElement>> DomStruct<Child, Element> {
         &mut self.contents
     }
 
+    pub fn set_contents(&mut self, new_contents: Child) {
+        self.contents = new_contents;
+    }
+
     pub fn set_attribute(&mut self, name: &str, value: &str) {
         self.elem.set_attribute(name, value)
     }
 }
 
-impl<Child: Sequence, Element: AsRef<HtmlElement>> Component for DomStruct<Child, Element> {
+impl<Child: Sequence, Element: AnyElement> Component for DomStruct<Child, Element> {
     fn audit(&self) {
         self.elem.audit_attributes();
         let dom_children = self.elem.get_child_node_list();
@@ -76,9 +80,7 @@ impl<Child: Sequence, Element: AsRef<HtmlElement>> Component for DomStruct<Child
     }
 }
 
-impl<Child: Sequence, Element: AsRef<HtmlElement>> ElementComponent<Element>
-    for DomStruct<Child, Element>
-{
+impl<Child: Sequence, Element: AnyElement> ElementComponent<Element> for DomStruct<Child, Element> {
     fn element(&self) -> ElementRef<Element> {
         self.elem.element()
     }

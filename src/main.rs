@@ -1,60 +1,75 @@
 use anyhow::Result;
+use std::cell::RefCell;
 use trunkfun::{
     dom_struct::*,
     dom_text::DomText,
     dom_vec::DomVec,
-    web_support::{Component, DocumentHandle, ElementComponent},
+    web_support::{DocumentHandle, ElementFactory},
 };
 
 type DomBr = DomStruct<(), web_sys::HtmlBrElement>;
 
 type LineNumber = DomStruct<(DomText, ()), web_sys::HtmlSpanElement>;
 
-type EditLine = (LineNumber, (DomText, (DomBr, ())));
+type EditLineType = (LineNumber, (DomText, (DomBr, ())));
 
-trait NewLine {
-    fn new(index: usize, string: &str, doc: &DocumentHandle) -> Self;
+type EditLine = DomStruct<EditLineType, web_sys::HtmlSpanElement>;
+
+type Editor = DomVec<EditLine, web_sys::HtmlDivElement>;
+
+type Body = DomStruct<(Editor, ()), web_sys::HtmlBodyElement>;
+
+type Document = DocumentHandle<Body>;
+
+fn new_line(index: usize, string: &str, factory: &ElementFactory) -> EditLine {
+    let mut inner = (
+        DomStruct::new((DomText::new(&format!("{index}. ")), ()), factory.span()),
+        (DomText::new(string), (DomBr::new((), factory.br()), ())),
+    );
+    inner.0.set_attribute("contenteditable", "false");
+    EditLine::new(inner, factory.span())
 }
 
-impl NewLine for EditLine {
-    fn new(index: usize, string: &str, doc: &DocumentHandle) -> Self {
-        let mut ret = (
-            DomStruct::new((DomText::new(&format!("{index}. ")), ()), doc.create_span()),
-            (DomText::new(string), (DomBr::new((), doc.create_br()), ())),
-        );
-        ret.0.set_attribute("contenteditable", "false");
-        ret
-    }
+thread_local! {
+    static DOCUMENT: RefCell<Document> = Document::default().into();
 }
 
-fn init() -> Result<()> {
-    let document = DocumentHandle::default();
-    let mut body = DomVec::new(document.create_body());
-    document.set_body(body.element());
+fn init(doc: &RefCell<Document>) -> Result<()> {
+    let mut doc = doc.borrow_mut();
+    let factory = doc.element_factory();
+    doc.set_body(Body::new((Editor::new(factory.div()), ()), factory.body()));
+    let body = doc.body_mut().expect("body");
 
-    body.set_contents(DomVec::new(document.create_div()));
-    let container = body.get_mut(0).unwrap();
+    let editor: &mut Editor = &mut body.get_mut().0;
 
-    container.set_attribute("class", "textentry");
-    container.set_attribute("contenteditable", "true");
-    container.set_attribute("spellcheck", "false");
+    editor.set_attribute("class", "textentry");
+    editor.set_attribute("contenteditable", "true");
+    editor.set_attribute("spellcheck", "false");
 
-    container.push(DomStruct::new(
-        EditLine::new(0, "Hello, world.", &document),
-        document.create_span(),
-    ));
+    editor.push(new_line(0, "Hello, world.", &factory));
+    editor.push(new_line(1, "This is a test.", &factory));
+    editor.push(new_line(2, "Here's another line.", &factory));
 
-    container.push(DomStruct::new(
-        EditLine::new(1, "How are you?", &document),
-        document.create_span(),
-    ));
+    editor.remove(1);
 
-    container.push(DomStruct::new(
-        EditLine::new(2, "Fine, thanks!", &document),
-        document.create_span(),
-    ));
+    editor
+        .get_mut(1)
+        .unwrap()
+        .get_mut()
+        .0
+        .get_mut()
+        .0
+        .set_data("1. ");
 
-    body.audit();
+    editor
+        .get_mut(1)
+        .unwrap()
+        .get_mut()
+        .1
+        .0
+        .set_data("This is now the second line.");
+
+    doc.audit();
 
     web_sys::console::log_1(&"successful audit".into());
 
@@ -63,8 +78,7 @@ fn init() -> Result<()> {
 
 fn main() {
     console_error_panic_hook::set_once();
-
-    if let Err(x) = init() {
+    if let Err(x) = DOCUMENT.with(init) {
         panic!("error: {x}")
     }
 }
