@@ -39,7 +39,7 @@ impl DomText {
 
 impl Component for DomText {
     fn audit(&self) {
-        assert!(self.contents == self.text_node.data());
+        assert_eq!(self.contents, self.text_node.data());
     }
 
     fn node(&self) -> NodeRef {

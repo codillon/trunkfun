@@ -39,8 +39,7 @@ fn init(doc: &RefCell<Document>) -> Result<()> {
     let factory = doc.element_factory();
     doc.set_body(Body::new((Editor::new(factory.div()), ()), factory.body()));
     let body = doc.body_mut().expect("body");
-
-    let editor: &mut Editor = &mut body.get_mut().0;
+    let editor = &mut body.get_mut().0;
 
     editor.set_attribute("class", "textentry");
     editor.set_attribute("contenteditable", "true");
@@ -68,6 +67,20 @@ fn init(doc: &RefCell<Document>) -> Result<()> {
         .1
         .0
         .set_data("This is now the second line.");
+
+    // closure receives the event, but so far doesn't do anything with it.
+    // This means the audit will fail on the second beforeinput event (because
+    // the first one has been applied by the browser by then).
+    editor.set_onbeforeinput(|ev| {
+        DOCUMENT.with(|d| d.borrow().audit());
+        web_sys::console::log_1(
+            &format!(
+                "successful audit just beforeinput: {}",
+                ev.data().unwrap_or_default()
+            )
+            .into(),
+        );
+    });
 
     doc.audit();
 

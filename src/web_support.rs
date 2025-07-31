@@ -7,6 +7,7 @@
 use delegate::delegate;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
 
 // Bare wrappers for a DOM Node and Element.
@@ -86,11 +87,18 @@ pub trait AnyElement: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node> {
 }
 impl<T: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node>> AnyElement for T {}
 
+#[derive(Default)]
+struct Handlers {
+    beforeinput: Option<Closure<dyn Fn(web_sys::InputEvent)>>,
+}
+
 // Wrapper for a DOM Element, allowing access to and modification of its attributes
-// and the ability to set and append to its child nodes (as NodeRefs or a ArrayHandle).
+// and event handlers, and the ability to set and append to its child nodes (as NodeRefs
+// or a ArrayHandle).
 pub struct ElementHandle<T: AnyElement> {
     elem: AutoRemove<T>,
     attributes: HashMap<String, String>,
+    event_handlers: Handlers,
 }
 
 impl<T: AnyElement> ElementHandle<T> {
@@ -98,6 +106,7 @@ impl<T: AnyElement> ElementHandle<T> {
         Self {
             elem: elem.into(),
             attributes: HashMap::default(),
+            event_handlers: Handlers::default(),
         }
     }
 
@@ -118,10 +127,10 @@ impl<T: AnyElement> ElementHandle<T> {
         self.elem.element().set_attribute(name, value).unwrap();
     }
 
-    pub fn audit_attributes(&self) {
+    pub fn audit(&self) {
         for (key, value) in &self.attributes {
             if let Some(dom_value) = self.elem.element().get_attribute(key) {
-                assert!(dom_value == *value);
+                assert_eq!(dom_value, *value);
             } else {
                 panic!("missing {key} (expected value {value})");
             }
@@ -129,6 +138,16 @@ impl<T: AnyElement> ElementHandle<T> {
 
         for dom_key in self.elem.element().get_attribute_names() {
             assert!(self.attributes.contains_key(&dom_key.as_string().unwrap()));
+        }
+
+        match (
+            &self.event_handlers.beforeinput,
+            self.elem.element().onbeforeinput(),
+        ) {
+            (Some(expect), Some(actual)) => assert_eq!(actual, *expect.as_ref().unchecked_ref()),
+            (Some(_), None) => panic!("missing event handler"),
+            (None, Some(_)) => panic!("unexpected event handler"),
+            (None, None) => (),
         }
     }
 
@@ -138,6 +157,18 @@ impl<T: AnyElement> ElementHandle<T> {
 
     pub fn get_child_node_list(&self) -> NodeListHandle {
         NodeListHandle(self.elem.element().child_nodes())
+    }
+
+    pub fn set_onbeforeinput<F: Fn(web_sys::InputEvent) + 'static>(&mut self, handler: F) {
+        self.event_handlers.beforeinput = Some(Closure::new(handler));
+        self.elem.element().set_onbeforeinput(Some(
+            self.event_handlers
+                .beforeinput
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unchecked_ref(),
+        ));
     }
 }
 

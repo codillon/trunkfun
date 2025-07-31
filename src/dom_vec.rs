@@ -39,15 +39,16 @@ impl<Child: Component, Element: AnyElement> DomVec<Child, Element> {
     }
     to self.elem {
         pub fn set_attribute(&mut self, name: &str, value: &str);
+    pub fn set_onbeforeinput<F: Fn(web_sys::InputEvent) + 'static>(&mut self, handler: F);
     }
     }
 }
 
 impl<Child: Component, Element: AnyElement> Component for DomVec<Child, Element> {
     fn audit(&self) {
-        self.elem.audit_attributes();
+        self.elem.audit();
         let dom_children = self.elem.get_child_node_list();
-        assert!(dom_children.length() == self.contents.len());
+        assert_eq!(dom_children.length(), self.contents.len());
         for (index, elem) in self.contents.iter().enumerate() {
             elem.audit();
             dom_children.audit_node(index, elem.node());

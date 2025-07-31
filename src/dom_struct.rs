@@ -5,6 +5,7 @@ use crate::web_support::{
     AnyElement, ArrayHandle, Component, ElementComponent, ElementHandle, ElementRef,
     NodeListHandle, NodeRef,
 };
+use delegate::delegate;
 
 pub struct DomStruct<Child: Sequence, Element: AnyElement> {
     contents: Child,
@@ -20,22 +21,22 @@ pub trait Sequence {
 impl Sequence for () {
     const LEN: usize = 0;
     fn install(&self, nodes: &mut ArrayHandle, index: usize) {
-        assert!(index == nodes.length());
+        assert_eq!(index, nodes.length());
     }
     fn audit(&self, node_list: &NodeListHandle, index: usize) {
-        assert!(index == node_list.length());
+        assert_eq!(index, node_list.length());
     }
 }
 
 impl<First: Component, Rest: Sequence> Sequence for (First, Rest) {
     const LEN: usize = Rest::LEN + 1;
     fn install(&self, nodes: &mut ArrayHandle, index: usize) {
-        assert!(index + Self::LEN == nodes.length());
+        assert_eq!(index + Self::LEN, nodes.length());
         nodes.set(index, self.0.node());
         self.1.install(nodes, index + 1);
     }
     fn audit(&self, node_list: &NodeListHandle, index: usize) {
-        assert!(index + Self::LEN == node_list.length());
+        assert_eq!(index + Self::LEN, node_list.length());
         node_list.audit_node(index, self.0.node());
         self.0.audit();
         self.1.audit(node_list, index + 1);
@@ -62,16 +63,19 @@ impl<Child: Sequence, Element: AnyElement> DomStruct<Child, Element> {
         self.contents = new_contents;
     }
 
-    pub fn set_attribute(&mut self, name: &str, value: &str) {
-        self.elem.set_attribute(name, value)
+    delegate! {
+    to self.elem {
+    pub fn set_attribute(&mut self, name: &str, value: &str);
+        pub fn set_onbeforeinput<F: Fn(web_sys::InputEvent) + 'static>(&mut self, handler: F);
+    }
     }
 }
 
 impl<Child: Sequence, Element: AnyElement> Component for DomStruct<Child, Element> {
     fn audit(&self) {
-        self.elem.audit_attributes();
+        self.elem.audit();
         let dom_children = self.elem.get_child_node_list();
-        assert!(dom_children.length() == Child::LEN);
+        assert_eq!(dom_children.length(), Child::LEN);
         self.contents.audit(&dom_children, 0);
     }
 
