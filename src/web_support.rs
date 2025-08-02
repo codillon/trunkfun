@@ -5,18 +5,59 @@
 // cannot directly access the children or parents of a DOM node.
 
 use delegate::delegate;
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
+use std::{
+    cell::Ref,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 use wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
 
 // Bare wrappers for a DOM Node and Element.
-pub struct NodeRef<'a>(&'a web_sys::Node);
-pub struct ElementRef<'a, T: AsRef<web_sys::HtmlElement>>(&'a T);
+enum RefHolder<'a, T> {
+    Borrow(&'a T),
+    Ref(Ref<'a, T>),
+}
 
-impl<'a, T: AsRef<web_sys::HtmlElement>> From<ElementRef<'a, T>> for NodeRef<'a> {
-    fn from(val: ElementRef<'a, T>) -> Self {
-        NodeRef(val.0.as_ref())
+impl<'a, T> RefHolder<'a, T> {
+    fn as_ref(&self) -> &T {
+        match &self {
+            RefHolder::Borrow(x) => x,
+            RefHolder::Ref(x) => x,
+        }
+    }
+}
+
+pub struct NodeRef<'a>(RefHolder<'a, web_sys::Node>);
+pub struct ElementRef<'a, T: AsRef<web_sys::HtmlElement>>(RefHolder<'a, T>);
+
+impl<'a> From<Ref<'a, NodeRef<'a>>> for NodeRef<'a> {
+    fn from(val: Ref<'a, NodeRef<'a>>) -> Self {
+        Self(RefHolder::Ref(Ref::map(val, |x| x.0.as_ref())))
+    }
+}
+
+impl<'a, T: AsRef<web_sys::HtmlElement>> From<Ref<'a, ElementRef<'a, T>>> for ElementRef<'a, T> {
+    fn from(val: Ref<'a, ElementRef<'a, T>>) -> Self {
+        Self(RefHolder::Ref(Ref::map(val, |x| x.0.as_ref())))
+    }
+}
+
+impl<'a, T: Component> From<Ref<'a, T>> for NodeRef<'a> {
+    fn from(val: Ref<'a, T>) -> Self {
+        Self(RefHolder::Ref(Ref::map(val, |x| match x.node().0 {
+            RefHolder::Borrow(a) => a,
+            RefHolder::Ref(_) => todo!("recursive component ref"),
+        })))
+    }
+}
+
+impl<'a, T: AnyElement, U: ElementComponent<T>> From<Ref<'a, U>> for ElementRef<'a, T> {
+    fn from(val: Ref<'a, U>) -> Self {
+        Self(RefHolder::Ref(Ref::map(val, |x| match x.element().0 {
+            RefHolder::Borrow(a) => a,
+            RefHolder::Ref(_) => todo!("recursive component ref"),
+        })))
     }
 }
 
@@ -64,8 +105,8 @@ impl Default for TextHandle {
 }
 
 impl TextHandle {
-    pub fn node<'a>(&'a self) -> NodeRef<'a> {
-        NodeRef(&self.0)
+    pub fn node(&self) -> NodeRef {
+        NodeRef(RefHolder::Borrow(&self.0))
     }
 
     delegate! {
@@ -111,11 +152,16 @@ impl<T: AnyElement> ElementHandle<T> {
     }
 
     pub fn append_node(&self, child: NodeRef) {
-        self.elem.element().append_with_node_1(child.0).unwrap() // no return value anyway
+        self.elem
+            .element()
+            .append_with_node_1(child.0.as_ref())
+            .unwrap() // no return value anyway
     }
 
     pub fn attach_node(&self, child: NodeRef) {
-        self.elem.element().replace_children_with_node_1(child.0);
+        self.elem
+            .element()
+            .replace_children_with_node_1(child.0.as_ref());
     }
 
     pub fn attach_nodes(&self, children: ArrayHandle) {
@@ -151,8 +197,12 @@ impl<T: AnyElement> ElementHandle<T> {
         }
     }
 
-    pub fn element<'a>(&'a self) -> ElementRef<'a, T> {
-        ElementRef(&self.elem)
+    pub fn element(&self) -> ElementRef<T> {
+        ElementRef(RefHolder::Borrow(&self.elem))
+    }
+
+    pub fn node(&self) -> NodeRef {
+        NodeRef(RefHolder::Borrow(self.elem.as_ref()))
     }
 
     pub fn get_child_node_list(&self) -> NodeListHandle {
@@ -202,7 +252,7 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyTy
     pub fn set_body(&mut self, body: BodyType) {
         self.body = Some(body);
         self.document
-            .set_body(Some(self.body.as_ref().unwrap().element().0));
+            .set_body(Some(self.body.as_ref().unwrap().element().0.as_ref()));
     }
 
     pub fn element_factory(&self) -> ElementFactory {
@@ -212,7 +262,7 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyTy
     pub fn audit(&self) {
         match (&self.body, self.document.body()) {
             (Some(body), Some(dom_body)) => {
-                assert!(dom_body.is_same_node(Some(body.node().0)));
+                assert!(dom_body.is_same_node(Some(body.node().0.as_ref())));
                 body.audit();
             }
             (Some(_), None) => panic!("missing body"),
@@ -262,7 +312,7 @@ impl NodeListHandle {
 
     pub fn audit_node(&self, index: usize, node: NodeRef) {
         if let Some(actual) = self.0.item(index.try_into().expect("index -> u32"))
-            && actual.is_same_node(Some(node.0))
+            && actual.is_same_node(Some(node.0.as_ref()))
         {
             return;
         }
@@ -284,9 +334,11 @@ impl ArrayHandle {
         ))
     }
 
-    pub fn set<'a>(&mut self, index: usize, node: NodeRef<'a>) {
-        self.0
-            .set(index.try_into().expect("index -> u32"), node.0.into())
+    pub fn set(&mut self, index: usize, node: NodeRef) {
+        self.0.set(
+            index.try_into().expect("index -> u32"),
+            node.0.as_ref().into(),
+        )
     }
 }
 
@@ -294,10 +346,10 @@ impl ArrayHandle {
 // that the DOM subtree matches the Component's expectations.
 pub trait Component {
     fn audit(&self);
-    fn node<'a>(&'a self) -> NodeRef<'a>;
+    fn node(&self) -> NodeRef;
 }
 
 // A Component that is also an HTML Element (i.e. not Text).
 pub trait ElementComponent<T: AnyElement>: Component {
-    fn element<'a>(&'a self) -> ElementRef<'a, T>;
+    fn element(&self) -> ElementRef<T>;
 }

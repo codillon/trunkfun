@@ -56,7 +56,7 @@ impl<Child: Component, Element: AnyElement> Component for DomVec<Child, Element>
     }
 
     fn node(&self) -> NodeRef {
-        self.elem.element().into()
+        self.elem.node()
     }
 }
 

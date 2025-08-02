@@ -80,7 +80,7 @@ impl<Child: Sequence, Element: AnyElement> Component for DomStruct<Child, Elemen
     }
 
     fn node(&self) -> NodeRef {
-        self.elem.element().into()
+        self.elem.node()
     }
 }
 
