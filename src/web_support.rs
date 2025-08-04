@@ -19,6 +19,7 @@ impl<'a, T: AsRef<web_sys::HtmlElement>> From<ElementRef<'a, T>> for NodeRef<'a>
         NodeRef(val.0.as_ref())
     }
 }
+
 pub struct NodeReader<T: AsRef<web_sys::Node>>(T);
 
 pub struct ElementReader<T: AsRef<web_sys::Element>>(T);
@@ -28,8 +29,11 @@ impl<T: AsRef<web_sys::Node>> NodeReader<T> {
         self.0.as_ref().parent_node().map(|node| NodeReader(node))
     }
 
-    pub fn parent_lement(&self) -> Option<ElementReader<web_sys::Element>> {
-        self.0.as_ref().parent_element().map(|elem| ElementReader(elem))
+    pub fn parent_element(&self) -> Option<ElementReader<web_sys::Element>> {
+        self.0
+            .as_ref()
+            .parent_element()
+            .map(|elem| ElementReader(elem))
     }
 }
 
@@ -52,8 +56,11 @@ impl<T: AsRef<web_sys::Element>> ElementReader<T> {
         self.0.as_ref().parent_node().map(|node| NodeReader(node))
     }
 
-    pub fn parent_lement(&self) -> Option<ElementReader<web_sys::Element>> {
-        self.0.as_ref().parent_element().map(|elem| ElementReader(elem))
+    pub fn parent_element(&self) -> Option<ElementReader<web_sys::Element>> {
+        self.0
+            .as_ref()
+            .parent_element()
+            .map(|elem| ElementReader(elem))
     }
 
     pub fn get_attr(&self, attr: &str) -> Option<String> {
