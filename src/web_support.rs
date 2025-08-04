@@ -8,6 +8,7 @@ use delegate::delegate;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::closure::Closure;
+use web_sys::Node;
 use web_sys::wasm_bindgen::JsCast;
 
 // Bare wrappers for a DOM Node and Element.
@@ -114,6 +115,21 @@ impl<T: AnyElement> ElementHandle<T> {
         self.elem.element().append_with_node_1(child.0).unwrap() // no return value anyway
     }
 
+    pub fn insert_node(&self, index: usize, child: NodeRef) {
+        self.elem
+            .element()
+            .insert_before(
+                child.0,
+                self.elem
+                    .element()
+                    .child_nodes()
+                    .item(index as u32)
+                    .as_ref(),
+            )
+            .expect("insert node");
+        // self.elem.element().append_with_node_1(child.0).unwrap()
+    }
+
     pub fn attach_node(&self, child: NodeRef) {
         self.elem.element().replace_children_with_node_1(child.0);
     }
@@ -174,11 +190,21 @@ impl<T: AnyElement> ElementHandle<T> {
 
 pub struct SelectionHandle(web_sys::Selection);
 
-impl SelectionHandle
-{
-    fn get_focus_node(&self) -> Option<>
-    {
-        
+impl SelectionHandle {
+    // pub fn get_focus_node(&self) -> Option<NodeHandle<Node>> {
+    //     self.0.focus_node().map(|node| NodeHandle::new(node))
+    // }
+
+    // pub fn get_anchor_node(&self) -> Option<NodeHandle<Node>> {
+    //     self.0.anchor_node().map(|node| NodeHandle::new(node))
+    // }
+
+    pub fn get_focus_offset(&self) -> usize {
+        self.0.focus_offset() as usize
+    }
+
+    pub fn get_anchor_offset(&self) -> usize {
+        self.0.anchor_offset() as usize
     }
 }
 
@@ -198,6 +224,7 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> Default for DocumentH
     }
 }
 
+#[derive(Clone)]
 pub struct ElementFactory(web_sys::Document);
 
 impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyType> {
