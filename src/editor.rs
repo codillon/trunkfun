@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::sync::Arc;
 use crate::dom_br::DomBr;
 use crate::dom_struct::*;
 use crate::dom_text::*;
@@ -66,7 +68,7 @@ impl Component for EditLine {
 }
 
 type DomEditor = DomVec<EditLine, web_sys::HtmlDivElement>;
-pub struct _Editor {
+struct _Editor {
     dom_editor: DomEditor,
     dom_selection: SelectionHandle,
     factory: ElementFactory,
@@ -89,29 +91,58 @@ impl _Editor {
         div.set_attribute("contenteditable", "true");
         div.set_attribute("spellcheck", "false");
         let dom_editor = DomVec::new(div);
-        let mut editor = _Editor {
+        _Editor {
             dom_editor,
             dom_selection,
             factory,
             next_id: 0,
-        };
+        }
+    }
+
+    
+    pub fn insert(&mut self, index: usize) {
+        self.dom_editor
+        .insert(index, EditLine::new(&self.factory, self.next_id));
+    self.next_id += 1;
+}
+}
+
+#[derive(Clone)]
+pub struct Editor(Arc<RefCell<_Editor>>);
+impl Editor{
+    fn initialize(&mut self)
+    {
+        let editor_rc = self.clone();
+        self.0.borrow_mut().dom_editor.set_onbeforeinput(move |ev|
+        {
+            ev.prevent_default();
+            web_sys::console::log_1(&format!("{:?}", editor_rc.0.borrow().dom_selection).into());
+        });
+
+        self.0.borrow_mut().insert(0);
+        self.0.borrow_mut().insert(1);
+        self.0.borrow_mut().insert(1);
+    }
+
+    pub fn new(factory: ElementFactory, dom_selection: SelectionHandle) -> Self
+    {
+        let mut editor = Editor(Arc::new(RefCell::new(_Editor::new(factory, dom_selection))));
         editor.initialize();
         editor
     }
+}
 
-    fn initialize(&mut self)
-    {
-        let selection = self.dom_selection.clone();
-        self.dom_editor.set_onbeforeinput(move |ev|
-        {
-            ev.prevent_default();
-            web_sys::console::log_1(&format!("{:?}", selection).into());
-        });
+impl<Rest: Sequence> Sequence for (Editor, Rest) {
+    const LEN: usize = Rest::LEN + 1;
+    fn install(&self, nodes: &mut crate::web_support::ArrayHandle, index: usize) {
+        assert_eq!(index + Self::LEN, nodes.length());
+        nodes.set(index, self.0.0.borrow().node());
+        self.1.install(nodes, index + 1);
     }
-
-    pub fn insert(&mut self, index: usize) {
-        self.dom_editor
-            .insert(index, EditLine::new(&self.factory, self.next_id));
-        self.next_id += 1;
+    fn audit(&self, node_list: &crate::web_support::NodeListHandle, index: usize) {
+        assert_eq!(index + Self::LEN, node_list.length());
+        node_list.audit_node(index, self.0.0.borrow().node());
+        self.0.0.borrow().audit();
+        self.1.audit(node_list, index + 1);
     }
 }
