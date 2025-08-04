@@ -44,7 +44,7 @@ impl<Child: Component, Element: AnyElement> DomVec<Child, Element> {
     }
     to self.elem {
         pub fn set_attribute(&mut self, name: &str, value: &str);
-    pub fn set_onbeforeinput<F: Fn(web_sys::InputEvent) + 'static>(&mut self, handler: F);
+        pub fn set_onbeforeinput<F: Fn(web_sys::InputEvent) + 'static>(&mut self, handler: F);
     }
     }
 }

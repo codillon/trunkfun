@@ -228,6 +228,7 @@ impl<T: AnyElement> ElementHandle<T> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SelectionHandle(web_sys::Selection);
 
 impl SelectionHandle {
