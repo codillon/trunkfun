@@ -1,8 +1,10 @@
+// The Codillon code editor (doesn't do much, but does capture beforeinput and logs to console)
+
 use crate::{
     dom_struct::DomStruct,
     dom_text::DomText,
     dom_vec::DomVec,
-    web_support::{Component, ElementComponent, ElementFactory, ElementRef, NodeRef},
+    web_support::{AccessToken, Component, ElementFactory, WithElement, WithNode},
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use web_sys::{HtmlBrElement, HtmlDivElement, HtmlSpanElement, InputEvent};
@@ -12,8 +14,8 @@ type LineContents = (DomText, (DomBr, ()));
 type EditLine = DomStruct<LineContents, HtmlSpanElement>;
 
 struct _Editor {
-    next_id: usize,
-    id_map: HashMap<usize, usize>,
+    _next_id: usize,
+    _id_map: HashMap<usize, usize>,
     component: DomVec<EditLine, HtmlDivElement>,
 }
 
@@ -22,8 +24,8 @@ pub struct Editor(Rc<RefCell<_Editor>>);
 impl Editor {
     pub fn new(factory: &ElementFactory) -> Self {
         let mut inner = _Editor {
-            next_id: 0,
-            id_map: HashMap::default(),
+            _next_id: 0,
+            _id_map: HashMap::default(),
             component: DomVec::new(factory.div()),
         };
 
@@ -64,34 +66,32 @@ impl Editor {
     }
 }
 
+impl WithNode for Editor {
+    fn with_node(&self, f: impl FnMut(&web_sys::Node), g: AccessToken) {
+        self.0.borrow().with_node(f, g);
+    }
+}
+
+impl WithElement<HtmlDivElement> for Editor {
+    fn with_element(&self, f: impl FnMut(&HtmlDivElement), g: AccessToken) {
+        self.0.borrow().component.with_element(f, g);
+    }
+}
+
 impl Component for Editor {
     fn audit(&self) {
         self.0.borrow().audit()
     }
-
-    fn node(&self) -> NodeRef {
-        self.0.borrow().into()
-    }
 }
 
-impl ElementComponent<HtmlDivElement> for Editor {
-    fn element(&self) -> ElementRef<HtmlDivElement> {
-        self.0.borrow().into()
+impl WithNode for _Editor {
+    fn with_node(&self, f: impl FnMut(&web_sys::Node), g: AccessToken) {
+        self.component.with_node(f, g);
     }
 }
 
 impl Component for _Editor {
     fn audit(&self) {
         self.component.audit()
-    }
-
-    fn node(&self) -> NodeRef {
-        self.component.node()
-    }
-}
-
-impl ElementComponent<HtmlDivElement> for _Editor {
-    fn element(&self) -> ElementRef<HtmlDivElement> {
-        self.component.element()
     }
 }

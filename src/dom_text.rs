@@ -2,7 +2,7 @@
 // the interface allows assignment, appending, and inserting into the
 // string, and enforces that the DOM contents will match the Rust contents.
 
-use crate::web_support::{Component, NodeRef, TextHandle};
+use crate::web_support::{AccessToken, Component, TextHandle, WithNode};
 use anyhow::Result;
 
 #[derive(Default)]
@@ -37,12 +37,14 @@ impl DomText {
     }
 }
 
+impl WithNode for DomText {
+    fn with_node(&self, f: impl FnMut(&web_sys::Node), g: AccessToken) {
+        self.text_node.with_node(f, g);
+    }
+}
+
 impl Component for DomText {
     fn audit(&self) {
         assert_eq!(self.contents, self.text_node.data());
-    }
-
-    fn node(&self) -> NodeRef {
-        self.text_node.node()
     }
 }

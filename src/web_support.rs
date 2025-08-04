@@ -6,59 +6,33 @@
 
 use delegate::delegate;
 use std::{
-    cell::Ref,
     collections::HashMap,
     ops::{Deref, DerefMut},
 };
 use wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
 
-// Bare wrappers for a DOM Node and Element.
-enum RefHolder<'a, T> {
-    Borrow(&'a T),
-    Ref(Ref<'a, T>),
+// Traits that give "raw" access to an underlying node or element,
+// only usable from the web_support module.
+struct _Private();
+pub struct AccessToken(_Private);
+const TOKEN: AccessToken = AccessToken(_Private());
+
+pub trait WithNode {
+    fn with_node(&self, f: impl FnMut(&web_sys::Node), g: AccessToken);
 }
 
-impl<'a, T> RefHolder<'a, T> {
-    fn as_ref(&self) -> &T {
-        match &self {
-            RefHolder::Borrow(x) => x,
-            RefHolder::Ref(x) => x,
-        }
+// Any HTML element
+pub trait AnyElement: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node> {
+    fn element(&self) -> &web_sys::HtmlElement {
+        self.as_ref()
     }
 }
 
-pub struct NodeRef<'a>(RefHolder<'a, web_sys::Node>);
-pub struct ElementRef<'a, T: AsRef<web_sys::HtmlElement>>(RefHolder<'a, T>);
+impl<T: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node>> AnyElement for T {}
 
-impl<'a> From<Ref<'a, NodeRef<'a>>> for NodeRef<'a> {
-    fn from(val: Ref<'a, NodeRef<'a>>) -> Self {
-        Self(RefHolder::Ref(Ref::map(val, |x| x.0.as_ref())))
-    }
-}
-
-impl<'a, T: AsRef<web_sys::HtmlElement>> From<Ref<'a, ElementRef<'a, T>>> for ElementRef<'a, T> {
-    fn from(val: Ref<'a, ElementRef<'a, T>>) -> Self {
-        Self(RefHolder::Ref(Ref::map(val, |x| x.0.as_ref())))
-    }
-}
-
-impl<'a, T: Component> From<Ref<'a, T>> for NodeRef<'a> {
-    fn from(val: Ref<'a, T>) -> Self {
-        Self(RefHolder::Ref(Ref::map(val, |x| match x.node().0 {
-            RefHolder::Borrow(a) => a,
-            RefHolder::Ref(_) => todo!("recursive component ref"),
-        })))
-    }
-}
-
-impl<'a, T: AnyElement, U: ElementComponent<T>> From<Ref<'a, U>> for ElementRef<'a, T> {
-    fn from(val: Ref<'a, U>) -> Self {
-        Self(RefHolder::Ref(Ref::map(val, |x| match x.element().0 {
-            RefHolder::Borrow(a) => a,
-            RefHolder::Ref(_) => todo!("recursive component ref"),
-        })))
-    }
+pub trait WithElement<T: AnyElement> {
+    fn with_element(&self, f: impl FnMut(&T), g: AccessToken);
 }
 
 // Wrapper for a Node or Element that removes it from its parent when dropped
@@ -95,7 +69,7 @@ impl<T: AsRef<web_sys::Node>> Drop for AutoRemove<T> {
 }
 
 // Wrapper for a DOM Text node, allowing access to and modification of its CharacterData's data.
-// Access to the underlying Node is only via a NodeRef.
+// Access to the underlying Node is only via the WithNode trait (i.e. only in this module).
 pub struct TextHandle(AutoRemove<web_sys::Text>);
 
 impl Default for TextHandle {
@@ -104,11 +78,13 @@ impl Default for TextHandle {
     }
 }
 
-impl TextHandle {
-    pub fn node(&self) -> NodeRef {
-        NodeRef(RefHolder::Borrow(&self.0))
+impl WithNode for TextHandle {
+    fn with_node(&self, mut f: impl FnMut(&web_sys::Node), _g: AccessToken) {
+        f(&self.0)
     }
+}
 
+impl TextHandle {
     delegate! {
     to self.0 {
         pub fn data(&self) -> String;
@@ -121,25 +97,30 @@ impl TextHandle {
     }
 }
 
-pub trait AnyElement: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node> {
-    fn element(&self) -> &web_sys::HtmlElement {
-        self.as_ref()
-    }
-}
-impl<T: AsRef<web_sys::HtmlElement> + AsRef<web_sys::Node>> AnyElement for T {}
-
+// Event handlers on an element (currently only `beforeinput` is represented).
 #[derive(Default)]
 struct Handlers {
     beforeinput: Option<Closure<dyn Fn(web_sys::InputEvent)>>,
 }
 
 // Wrapper for a DOM Element, allowing access to and modification of its attributes
-// and event handlers, and the ability to set and append to its child nodes (as NodeRefs
-// or a ArrayHandle).
+// and event handlers, and the ability to set and append to its child nodes.
 pub struct ElementHandle<T: AnyElement> {
     elem: AutoRemove<T>,
     attributes: HashMap<String, String>,
     event_handlers: Handlers,
+}
+
+impl<T: AnyElement> WithNode for ElementHandle<T> {
+    fn with_node(&self, mut f: impl FnMut(&web_sys::Node), _g: AccessToken) {
+        f(self.elem.0.as_ref())
+    }
+}
+
+impl<T: AnyElement> WithElement<T> for ElementHandle<T> {
+    fn with_element(&self, mut f: impl FnMut(&T), _g: AccessToken) {
+        f(&self.elem.0)
+    }
 }
 
 impl<T: AnyElement> ElementHandle<T> {
@@ -151,17 +132,18 @@ impl<T: AnyElement> ElementHandle<T> {
         }
     }
 
-    pub fn append_node(&self, child: NodeRef) {
-        self.elem
-            .element()
-            .append_with_node_1(child.0.as_ref())
-            .unwrap() // no return value anyway
+    pub fn append_node(&self, child: &impl WithNode) {
+        child.with_node(
+            |node| self.elem.element().append_with_node_1(node).unwrap(), // no return value anyway
+            TOKEN,
+        )
     }
 
-    pub fn attach_node(&self, child: NodeRef) {
-        self.elem
-            .element()
-            .replace_children_with_node_1(child.0.as_ref());
+    pub fn attach_node(&self, child: &impl WithNode) {
+        child.with_node(
+            |node| self.elem.element().replace_children_with_node_1(node),
+            TOKEN,
+        )
     }
 
     pub fn attach_nodes(&self, children: ArrayHandle) {
@@ -197,14 +179,6 @@ impl<T: AnyElement> ElementHandle<T> {
         }
     }
 
-    pub fn element(&self) -> ElementRef<T> {
-        ElementRef(RefHolder::Borrow(&self.elem))
-    }
-
-    pub fn node(&self) -> NodeRef {
-        NodeRef(RefHolder::Borrow(self.elem.as_ref()))
-    }
-
     pub fn get_child_node_list(&self) -> NodeListHandle {
         NodeListHandle(self.elem.element().child_nodes())
     }
@@ -229,6 +203,16 @@ pub struct DocumentHandle<BodyType: ElementComponent<web_sys::HtmlBodyElement>> 
     body: Option<BodyType>,
 }
 
+impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> WithElement<web_sys::HtmlBodyElement>
+    for DocumentHandle<BodyType>
+{
+    fn with_element(&self, f: impl FnMut(&web_sys::HtmlBodyElement), g: AccessToken) {
+        if let Some(body) = &self.body {
+            body.with_element(f, g);
+        }
+    }
+}
+
 impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> Default for DocumentHandle<BodyType> {
     fn default() -> Self {
         Self {
@@ -250,9 +234,8 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyTy
     }
 
     pub fn set_body(&mut self, body: BodyType) {
+        body.with_element(|elem| self.document.set_body(Some(elem)), TOKEN);
         self.body = Some(body);
-        self.document
-            .set_body(Some(self.body.as_ref().unwrap().element().0.as_ref()));
     }
 
     pub fn element_factory(&self) -> ElementFactory {
@@ -262,7 +245,7 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyTy
     pub fn audit(&self) {
         match (&self.body, self.document.body()) {
             (Some(body), Some(dom_body)) => {
-                assert!(dom_body.is_same_node(Some(body.node().0.as_ref())));
+                body.with_node(|node| assert!(dom_body.is_same_node(Some(node))), TOKEN);
                 body.audit();
             }
             (Some(_), None) => panic!("missing body"),
@@ -310,13 +293,18 @@ impl NodeListHandle {
         self.0.length() as usize
     }
 
-    pub fn audit_node(&self, index: usize, node: NodeRef) {
-        if let Some(actual) = self.0.item(index.try_into().expect("index -> u32"))
-            && actual.is_same_node(Some(node.0.as_ref()))
-        {
-            return;
-        }
-        panic!("node {} mismatch (#{}/{})", index, index + 1, self.length())
+    pub fn audit_node(&self, index: usize, child: &impl WithNode) {
+        child.with_node(
+            |node| {
+                if let Some(actual) = self.0.item(index.try_into().expect("index -> u32"))
+                    && actual.is_same_node(Some(node))
+                {
+                    return;
+                }
+                panic!("node {} mismatch (#{}/{})", index, index + 1, self.length())
+            },
+            TOKEN,
+        );
     }
 }
 
@@ -334,22 +322,23 @@ impl ArrayHandle {
         ))
     }
 
-    pub fn set(&mut self, index: usize, node: NodeRef) {
-        self.0.set(
-            index.try_into().expect("index -> u32"),
-            node.0.as_ref().into(),
+    pub fn set(&mut self, index: usize, child: &impl WithNode) {
+        child.with_node(
+            |node| {
+                self.0
+                    .set(index.try_into().expect("index -> u32"), node.into())
+            },
+            TOKEN,
         )
     }
 }
 
 // A trait for a safe "Component", allowing wrapped access to its root Node and audit
 // that the DOM subtree matches the Component's expectations.
-pub trait Component {
+pub trait Component: WithNode {
     fn audit(&self);
-    fn node(&self) -> NodeRef;
 }
 
-// A Component that is also an HTML Element (i.e. not Text).
-pub trait ElementComponent<T: AnyElement>: Component {
-    fn element(&self) -> ElementRef<T>;
-}
+// ElementComponent is a trait for a "Component" that is also an HTML Element (e.g. not Text).
+pub trait ElementComponent<T: AnyElement>: Component + WithElement<T> {}
+impl<T: AnyElement, U: Component + WithElement<T>> ElementComponent<T> for U {}
