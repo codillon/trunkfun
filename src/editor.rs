@@ -14,13 +14,14 @@ struct EditLine {
 
 impl EditLine {
     pub fn new(factory: &ElementFactory, id: usize) -> Self {
-        let dom_editline = DomEditLine::new(
+        let mut dom_editline = DomEditLine::new(
             (
                 DomText::new(&format!("Hello World, id {}", id)),
                 (DomBr::new((), factory.br()), ()),
             ),
             factory.div(),
         );
+        dom_editline.set_attribute("data-editline-id", &id.to_string());
         EditLine { dom_editline, id }
     }
 }

@@ -8,7 +8,6 @@ use delegate::delegate;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::closure::Closure;
-use web_sys::Node;
 use web_sys::wasm_bindgen::JsCast;
 
 // Bare wrappers for a DOM Node and Element.
@@ -18,6 +17,47 @@ pub struct ElementRef<'a, T: AsRef<web_sys::HtmlElement>>(&'a T);
 impl<'a, T: AsRef<web_sys::HtmlElement>> From<ElementRef<'a, T>> for NodeRef<'a> {
     fn from(val: ElementRef<'a, T>) -> Self {
         NodeRef(val.0.as_ref())
+    }
+}
+pub struct NodeReader<T: AsRef<web_sys::Node>>(T);
+
+pub struct ElementReader<T: AsRef<web_sys::Element>>(T);
+
+impl<T: AsRef<web_sys::Node>> NodeReader<T> {
+    pub fn parent_node(&self) -> Option<NodeReader<web_sys::Node>> {
+        self.0.as_ref().parent_node().map(|node| NodeReader(node))
+    }
+
+    pub fn parent_lement(&self) -> Option<ElementReader<web_sys::Element>> {
+        self.0.as_ref().parent_element().map(|elem| ElementReader(elem))
+    }
+}
+
+impl<T: AsRef<web_sys::Node> + JsCast, U: AsRef<web_sys::Element> + JsCast + Clone>
+    TryFrom<NodeReader<T>> for ElementReader<U>
+{
+    type Error = NodeReader<T>;
+    fn try_from(value: NodeReader<T>) -> Result<Self, Self::Error> {
+        let node_ref: &web_sys::Node = value.0.as_ref();
+        if let Some(elem) = node_ref.dyn_ref::<U>() {
+            std::result::Result::Ok(ElementReader(elem.clone()))
+        } else {
+            std::result::Result::Err(value)
+        }
+    }
+}
+
+impl<T: AsRef<web_sys::Element>> ElementReader<T> {
+    pub fn parent_node(&self) -> Option<NodeReader<web_sys::Node>> {
+        self.0.as_ref().parent_node().map(|node| NodeReader(node))
+    }
+
+    pub fn parent_lement(&self) -> Option<ElementReader<web_sys::Element>> {
+        self.0.as_ref().parent_element().map(|elem| ElementReader(elem))
+    }
+
+    pub fn get_attr(&self, attr: &str) -> Option<String> {
+        self.0.as_ref().get_attribute(attr)
     }
 }
 
@@ -191,13 +231,13 @@ impl<T: AnyElement> ElementHandle<T> {
 pub struct SelectionHandle(web_sys::Selection);
 
 impl SelectionHandle {
-    // pub fn get_focus_node(&self) -> Option<NodeHandle<Node>> {
-    //     self.0.focus_node().map(|node| NodeHandle::new(node))
-    // }
+    pub fn get_focus_node(&self) -> Option<NodeReader<web_sys::Node>> {
+        self.0.focus_node().map(|node| NodeReader(node))
+    }
 
-    // pub fn get_anchor_node(&self) -> Option<NodeHandle<Node>> {
-    //     self.0.anchor_node().map(|node| NodeHandle::new(node))
-    // }
+    pub fn get_anchor_node(&self) -> Option<NodeReader<web_sys::Node>> {
+        self.0.anchor_node().map(|node| NodeReader(node))
+    }
 
     pub fn get_focus_offset(&self) -> usize {
         self.0.focus_offset() as usize
