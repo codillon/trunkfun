@@ -172,6 +172,16 @@ impl<T: AnyElement> ElementHandle<T> {
     }
 }
 
+pub struct SelectionHandle(web_sys::Selection);
+
+impl SelectionHandle
+{
+    fn get_focus_node(&self) -> Option<>
+    {
+        
+    }
+}
+
 // Wrapper for a DOM Document, allowing modification of the body and
 // the ability to create Elements (as ElementHandles).
 pub struct DocumentHandle<BodyType: ElementComponent<web_sys::HtmlBodyElement>> {
@@ -207,6 +217,13 @@ impl<BodyType: ElementComponent<web_sys::HtmlBodyElement>> DocumentHandle<BodyTy
 
     pub fn element_factory(&self) -> ElementFactory {
         ElementFactory(self.document.clone())
+    }
+
+    pub fn get_selection(&self) -> Option<SelectionHandle> {
+        self.document
+            .get_selection()
+            .expect("Get Document Selection")
+            .map(|dom_selection| SelectionHandle(dom_selection))
     }
 
     pub fn audit(&self) {
